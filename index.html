@@ -55,6 +55,7 @@ input,select,button{font:inherit;color:inherit}
 .stat{background:rgba(255,255,255,.07);border-radius:12px;padding:9px 11px}
 .stat b{display:block;font-size:19px;font-weight:800}
 .stat em{font-style:normal;color:#c4cbe0;font-size:12px;font-weight:600}
+.nowline{margin-top:10px;font-size:14px;font-weight:700;color:#e8ecf7}.nowline small{display:block;font-weight:600;color:#c4cbe0;font-size:12px}
 .who{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .chip{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:4px 11px;font-size:13px;font-weight:600}
 .chip b{color:var(--pink)}
@@ -138,6 +139,7 @@ dialog::backdrop{background:rgba(15,20,32,.45)}
 .due.green{background:#dcf3e5;color:#1b7f45}
 .due.orange{background:#ffe9cc;color:#a85d00}
 .due.red{background:var(--bad-soft);color:var(--bad)}
+button.chip{cursor:pointer;font-family:inherit;color:inherit}button.chip:hover{border-color:var(--pink,#e8117f)}button.chip.on{outline:2px solid #e8117f;outline-offset:1px}
 .chip.green b{color:#1b7f45} .chip.orange b{color:#a85d00} .chip.red b{color:var(--bad)}
 #me{font-weight:800;max-width:190px}
 #me.need{border-color:var(--bad);background:var(--bad-soft)}
@@ -175,7 +177,7 @@ dialog::backdrop{background:rgba(15,20,32,.45)}
   <header class="top">
     <div class="brand">
       <div class="mark">BF</div>
-      <div><h1>تحصيل اليوم</h1><small>بودي فيكس · إصدار 7 أكتوبر (10)</small></div>
+      <div><h1>تحصيل اليوم</h1><small>بودي فيكس · إصدار 8 أكتوبر (11)</small></div>
     </div>
     <div class="toolbar">
       <div class="seg" role="group" aria-label="الفرع">
@@ -187,6 +189,7 @@ dialog::backdrop{background:rgba(15,20,32,.45)}
       <input type="date" id="day" class="field" aria-label="التاريخ">
       <label class="btn primary" for="file" id="fileLbl">⬆ رفع ملف المواعيد</label>
       <input type="file" id="file" accept=".xlsx,.xls" class="sr">
+      <button class="btn ghost" id="syncNow" title="يسحب آخر بيانات من Medicolize دلوقتي">⚡ تحديث فوري</button>
       <button class="btn ghost" id="addBtn">＋ مريض مش في السيستم</button>
       <button class="btn ghost" id="helpBtn">؟ إزاي أشتغل</button>
       <button class="btn ghost" id="repBtn">📊 تقرير فترة</button>
@@ -201,6 +204,7 @@ dialog::backdrop{background:rgba(15,20,32,.45)}
       <div class="lbl" id="heroLbl">نسبة التحصيل النهارده</div>
       <div class="pct" id="pct">0<span>%</span></div>
       <div class="bar"><i id="barI"></i></div>
+      <div class="nowline" id="nowLine"></div>
     </div>
     <div class="stats">
       <div class="stat"><em>المطلوب</em><b id="sReq">0</b></div>
@@ -231,6 +235,7 @@ dialog::backdrop{background:rgba(15,20,32,.45)}
     <button class="tab" data-f="open" aria-pressed="false">لسه</button>
     <button class="tab" data-f="done" aria-pressed="false">اتحصّل</button>
     <button class="tab" data-f="cancel" aria-pressed="false">ملغي</button>
+    <button class="tab" data-f="nonote" aria-pressed="false" id="nnTab">🔕 ما اتحصّلش ومفيش ملحوظة</button>
     <button class="tab" data-f="hist" aria-pressed="false">📝 عليهم ملاحظات</button>
     <button class="tab" data-f="post" aria-pressed="false" id="postTab">🔁 أجّلوا أكتر من مرة</button>
     <button class="tab" data-f="due" aria-pressed="false">⏰ وقت التحصيل</button>
@@ -312,6 +317,11 @@ dialog::backdrop{background:rgba(15,20,32,.45)}
       <button class="btn ghost" id="sUp">رفع بيانات الجهاز ده للشيت</button>
       <button class="btn ghost" id="sOff">فصل</button>
     </div>
+  </div>
+  <div id="ghBox" style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
+    <h3 style="font-size:16px">⚡ التحديث الفوري من Medicolize</h3>
+    <div class="hint" id="ghState">المزامنة بتشتغل لوحدها كل نص ساعة (9 الصبح لـ 10 بالليل). عشان زرار «تحديث فوري» يشتغل، حط مفتاح GitHub مرة واحدة هنا — بيتحفظ في الشيت لكل الأجهزة.</div>
+    <div style="display:flex;gap:6px;margin-top:6px"><input class="field" id="ghTok" placeholder="GitHub token (github_pat_…)" dir="ltr" style="flex:1"><button class="btn blue" id="ghSave">حفظ</button></div>
   </div>
   <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
     <h3 style="font-size:16px">إدارة البيانات</h3>
@@ -920,6 +930,25 @@ function dueState(r){
   return {k:'red', txt:`🔴 الميعاد خلص من ${fmtDur((now - w.en)/60000)} — ما اتحصّلش`};
 }
 
+/* patients not collected (or partly) with no note today, no previous notes, not postponed */
+function noNote(r){
+  const st = rowState(r);
+  if (!(st === 'open' || st === 'part') || !(Number(r.due) > 0)) return false;
+  return !String(r.note||'').trim() && !r.postponed && !histOf(r);
+}
+/* collection rate only for patients whose appointment already started (today) */
+function nowStats(){
+  if (day() !== todayStr()) return null;
+  const now = Date.now(); let req = 0, col = 0, n = 0, nc = 0;
+  for (const r of rows.values()){
+    if (!inView(r) || r.cancelled) continue;
+    const w = apptWindow(r); if (!w || w.st > now) continue;
+    n++; req += Number(r.due)||0; const c = Number(r.collected)||0; col += c; if (c > 0) nc++;
+  }
+  if (!n) return null;
+  return {lbl: 'من اللي ميعادهم جه أو عدّى', p: req > 0 ? Math.round(col/req*100) : 0, req, col, n, nc};
+}
+
 /* ---------------- render ---------------- */
 function totals(){
   let req=0, col=0, n=0, nc=0; const by = {};
@@ -946,14 +975,19 @@ function renderInner(){
   $('#sLeft').textContent = fmt(Math.max(0,t.req-t.col)); $('#sCnt').textContent = `${t.n} (${t.nc})`;
   const dsAll = [...rows.values()].filter(inView).map(dueState).filter(Boolean);
   const nG = dsAll.filter(x => x.k==='green').length, nO = dsAll.filter(x => x.k==='orange').length, nR = dsAll.filter(x => x.k==='red').length;
-  const dueChips = dsAll.length ? `<span class="chip green">🟢 حان وقتهم: <b>${nG}</b></span><span class="chip orange">🟠 في ميعادهم: <b>${nO}</b></span><span class="chip red">🔴 الميعاد خلص: <b>${nR}</b></span>` : '';
-  $('#who').innerHTML = dueChips + Object.entries(t.by).sort((a,b)=>b[1].v-a[1].v).map(([k,v]) => `<span class="chip"><bdi>${esc(k)}</bdi>: <b>${fmt(v.v)}</b> ج · ${v.n} مريض</span>`).join('');
+  const on = f => filter === f ? ' on' : '';
+  const dueChips = dsAll.length ? `<button class="chip green${on('due:green')}" data-cf="due:green">🟢 حان وقتهم: <b>${nG}</b></button><button class="chip orange${on('due:orange')}" data-cf="due:orange">🟠 في ميعادهم: <b>${nO}</b></button><button class="chip red${on('due:red')}" data-cf="due:red">🔴 الميعاد خلص: <b>${nR}</b></button>` : '';
+  $('#who').innerHTML = dueChips + Object.entries(t.by).sort((a,b)=>b[1].v-a[1].v).map(([k,v]) => `<button class="chip${on('by:'+k)}" data-cf="${esc('by:'+k)}"><bdi>${esc(k)}</bdi>: <b>${fmt(v.v)}</b> ج · ${v.n} مريض</button>`).join('');
   { const l = lastSync(branch); const any = [...rows.values()].some(r => inView(r) && !r.manual);
     $('#fileLbl').textContent = any ? '🔄 تحديث من السيستم' : '⬆ رفع ملف المواعيد';
     if (!l) $('#sync').innerHTML = '';
     else { const mins = (Date.now() - new Date(l).getTime())/60000; const old = day() === todayStr() && mins > 60;
       $('#sync').innerHTML = old ? `<span class="old">⚠ آخر تحديث من السيستم ${t12(l)} (من ${fmtDur(mins)}) — صدّر الملف تاني واضغط «🔄 تحديث من السيستم» عشان تعرف مين وصل</span>`
                                  : `<span class="fresh">✓ آخر تحديث من السيستم: ${t12(l)}</span>`; } }
+  { const nn = [...rows.values()].filter(r => inView(r) && noNote(r)).length;
+    $('#nnTab').textContent = `🔕 ما اتحصّلش ومفيش ملحوظة${nn ? ` (${nn})` : ''}`;
+    const ns = nowStats();
+    $('#nowLine').innerHTML = ns ? `${ns.lbl}: ${ns.p}%<small>اتحصّل ${fmt(ns.col)} من ${fmt(ns.req)} ج · ${ns.n} مريض (اتحصّل من ${ns.nc})</small>` : ''; }
   const q = $('#q').value.trim();
   $('#heroLbl').textContent = day() === todayStr() ? `نسبة التحصيل النهارده — ${BR_NAME[branch]}` : `نسبة التحصيل يوم ${day()} — ${BR_NAME[branch]} (مش النهارده)`;
   let list = [...rows.values()].filter(inView).sort((a,b) => (a.order||'~').localeCompare(b.order||'~') || (a.createdAt||'').localeCompare(b.createdAt||''));
@@ -965,6 +999,9 @@ function renderInner(){
     if (filter==='cancel' && st!=='cancel') return false;
     if (filter==='due'){ if (!dueState(r)) return false; }
     if (filter==='hist' && !histOf(r)) return false;
+    if (filter==='nonote' && !noNote(r)) return false;
+    if (filter.startsWith('due:')){ const d = dueState(r); if (!d || d.k !== filter.slice(4)) return false; }
+    if (filter.startsWith('by:') && !(Number(r.collected) > 0 && (r.collector||'—') === filter.slice(3))) return false;
     if (filter==='post' && postCount(r).n < 2) return false;
     if (filter==='issue'){ const c = checkRow(r); if (!c || c.lvl==='ok' || c.lvl==='neu') return false; }
     if (q && !(String(r.name).includes(q) || String(r.pid||'').includes(q))) return false;
@@ -1043,6 +1080,12 @@ document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () =>
   filter = b.dataset.f; document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-pressed', String(x===b))); render();
 }));
 $('#q').addEventListener('input', render);
+$('#who').addEventListener('click', e => {
+  const b = e.target.closest('[data-cf]'); if (!b) return;
+  filter = filter === b.dataset.cf ? 'all' : b.dataset.cf;
+  document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.f === filter)));
+  render(); $('#list').scrollIntoView({behavior:'smooth', block:'start'});
+});
 let dayManual = false;
 $('#day').addEventListener('change', () => { dayManual = $('#day').value !== todayStr(); subscribeDay(); });
 $('#file').addEventListener('change', e => { const f = e.target.files[0]; if (f) importFile(f); e.target.value=''; });
@@ -1086,6 +1129,32 @@ $('#rbody').addEventListener('click', async e => {
     const res = await applySystem(recon, brs);
     showMsg(`اتظبط ${res.adj} مريض${res.added ? ` · اتضاف ${res.added}` : ''}${res.removed ? ` · اتشال ${res.removed} مكرر` : ''} — الأداة دلوقتي مطابقة للسيستم.`, 'info');
   }
+});
+/* ---------------- instant sync (GitHub Actions workflow_dispatch) ---------------- */
+const GH_DISPATCH = 'https://api.github.com/repos/amgadkhedrpt-cmd/bodyfix-sync/actions/workflows/sync.yml/dispatches';
+async function ghToken(){
+  try { if (db && db.kind === 'sheet'){ const s = await db.doc('config/ghsync').get(); if (s.exists && s.data().token) return s.data().token; } } catch(e){}
+  try { return localStorage.getItem('bf_ghtok') || ''; } catch(e){ return ''; }
+}
+$('#ghSave').addEventListener('click', async () => {
+  const t = $('#ghTok').value.trim(); if (!t){ $('#ghState').textContent = 'الصق المفتاح الأول.'; return; }
+  $('#ghState').textContent = 'جاري الحفظ…';
+  try { if (db && db.kind === 'sheet') await db.doc('config/ghsync').set({token: t, at: nowISO()}); else localStorage.setItem('bf_ghtok', t); $('#ghTok').value = ''; $('#ghState').textContent = 'اتحفظ ✓ — زرار «⚡ تحديث فوري» شغال دلوقتي على كل الأجهزة.'; }
+  catch(e){ $('#ghState').textContent = 'ما اتحفظش، جرّب تاني.'; }
+});
+let syncBusy = false;
+$('#syncNow').addEventListener('click', async () => {
+  if (syncBusy) return;
+  const t = await ghToken();
+  if (!t){ showMsg('التحديث الفوري لسه مش متفعّل — صاحب الحساب يحط مفتاح GitHub من ⚙ الإعدادات.', 'warn'); return; }
+  syncBusy = true; $('#syncNow').textContent = '⏳ بيحدّث…';
+  try {
+    const r = await fetch(GH_DISPATCH, {method:'POST', headers:{'Authorization':'Bearer '+t, 'Accept':'application/vnd.github+json', 'Content-Type':'application/json'}, body: JSON.stringify({ref:'main'})});
+    if (r.status === 204){ showMsg('بدأ التحديث من Medicolize ✓ — البيانات هتتحدّث هنا لوحدها خلال دقيقة أو اتنين.', 'info'); }
+    else if (r.status === 401 || r.status === 403 || r.status === 404){ showMsg('مفتاح GitHub مش شغال (منتهي أو مالوش صلاحية) — حط مفتاح جديد من ⚙ الإعدادات.', 'warn'); }
+    else showMsg('ما قدرتش أبدأ التحديث دلوقتي، جرّب كمان شوية.', 'warn');
+  } catch(e){ showMsg('مفيش اتصال — جرّب تاني.', 'warn'); }
+  setTimeout(() => { syncBusy = false; $('#syncNow').textContent = '⚡ تحديث فوري'; }, 60000);
 });
 function renderSync(){
   const inClaude = shared && db && db.kind !== 'sheet';
@@ -1355,29 +1424,4 @@ if (Array.isArray(lc) && lc.length) colsBy.haram = lc;
 else if (lc && typeof lc === 'object'){ if (Array.isArray(lc.collectors) && lc.collectors.length) colsBy.haram = lc.collectors; if (Array.isArray(lc.collectorsDokki)) colsBy.dokki = lc.collectorsDokki; }
 collectors = colsBy.haram;
 { const h = location.hash.replace('#',''); const hb = new URLSearchParams(h).get('b') || h; if (['haram','dokki','all'].includes(hb)) branch = hb; }
-document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.br === branch)));
-subscribeDay(); renderCollectors();
-(async () => {
-  const fromHash = readSetupHash();
-  let d = null, dl = null;
-  if (window.claude && window.claude.use){ [d, dl] = await Promise.all([window.claude.use('db'), window.claude.use('downloads')]); }
-  downloads = dl;
-  const cfg = sheetCfg();
-  if (d){ db = d; shared = true; }
-  else if (cfg && cfg.url && cfg.key){ db = makeSheetDb(cfg.url, cfg.key); shared = true; }
-  else if (DEFAULT_SHEET_URL && !window.claude){ askPin(); }
-  if (shared){
-    subscribeDay();
-    unsubSet = db.doc('config/settings').onSnapshot(s => {
-      if (!s.exists) return; const v = s.data();
-      if (Array.isArray(v.collectors) && v.collectors.length) colsBy.haram = v.collectors.slice();
-      if (Array.isArray(v.collectorsDokki)) colsBy.dokki = v.collectorsDokki.slice();
-      collectors = colsBy.haram; renderCollectors(); render();
-    });
-    if (fromHash) showMsg('تم ربط الجهاز ده بالشيت ✓ — البيانات متزامنة.', 'info');
-  } else showMsg('الجهاز ده مش مربوط بالبيانات — اضغط ⚙ أو اعمل Refresh واكتب كلمة السر.', 'warn');
-  renderSync();
-})();
-</script>
-</body>
-</html>
+document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.br === b
